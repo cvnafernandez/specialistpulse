@@ -2,129 +2,120 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
-import plotly.graph_objects as go
+import datetime
 
 # --- PAGE SETUP ---
-# This forces the page to be wide and gives it a clean title
-st.set_page_config(page_title="Specialist Pulse", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Specialist Pulse", layout="wide", initial_sidebar_state="expanded")
 
-# --- FAKE DATA GENERATION ---
-# Setting a seed so the random data stays the same on each refresh
-np.random.seed(42)
+# --- FAKE DATA GENERATION (MULTI-DAY & MULTI-STATE) ---
+@st.cache_data
+def generate_data():
+    np.random.seed(42)
+    start_date = datetime.date(2026, 1, 1)
+    end_date = datetime.date.today()
+    dates = pd.date_range(start_date, end_date)
+    
+    specialists = ["Avery S.", "Jordan T.", "Casey L.", "Taylor R.", "Morgan W.", "Riley B.", "Quinn M.", "Reese K.", "Drew P."]
+    states = ["Arizona", "California", "Colorado"]
+    
+    records = []
+    for d in dates:
+        for s in specialists:
+            state = np.random.choice(states)
+            # Simulating touches per hour
+            touches = np.random.randint(15, 32)
+            # Simulating rejection rate (Goal is under 10%)
+            rejection = np.random.uniform(2.0, 18.0) 
+            records.append([d, s, state, touches, rejection])
+            
+    return pd.DataFrame(records, columns=["Date", "Specialist", "State", "Touches Per Hour", "Rejection Rate (%)"])
 
-specialists = ["Avery S.", "Jordan T.", "Casey L.", "Taylor R.", "Morgan W.", "Riley B.", "Quinn M.", "Reese K.", "Drew P."]
+df = generate_data()
 
-# Simulating touches per hour (Goal is 22)
-touches = np.random.randint(16, 32, size=len(specialists))
+# --- SIDEBAR FILTERS ---
+st.sidebar.markdown("### Dashboard Controls")
 
-# Simulating accuracy rates (Goal is 90%)
-# Creating a few high performers and a few who need coaching
-accuracy = np.random.uniform(85.0, 98.0, size=len(specialists))
+# Date Filter
+min_date = df["Date"].min().date()
+max_date = df["Date"].max().date()
+selected_dates = st.sidebar.date_input("Select Date Range", [min_date, max_date], min_value=min_date, max_value=max_date)
 
-df = pd.DataFrame({
-    "Specialist": specialists,
-    "Touches Per Hour": touches,
-    "Accuracy Rate (%)": np.round(accuracy, 1)
-})
+# State Filter
+selected_states = st.sidebar.multiselect("Select States", options=["Arizona", "California", "Colorado"], default=["Arizona", "California", "Colorado"])
 
-# Sorting by Touches for a better looking chart
-df = df.sort_values("Touches Per Hour", ascending=False)
+st.sidebar.divider()
+st.sidebar.markdown("Data powered by Sigma Connection (Simulated)")
 
-# --- HEADER ---
-st.markdown("## ⚡ Specialist Pulse Dashboard")
-st.markdown("Real-time performance metrics and workflow tracking.")
+# --- FILTERING LOGIC ---
+if len(selected_dates) == 2:
+    start_filter, end_filter = selected_dates
+    # Filter the dataframe based on sidebar inputs
+    mask = (df['Date'].dt.date >= start_filter) & (df['Date'].dt.date <= end_filter) & (df['State'].isin(selected_states))
+    filtered_df = df[mask]
+else:
+    filtered_df = df
+
+# Aggregate data for the scatter plot (Average over the selected time period)
+agg_df = filtered_df.groupby("Specialist").agg(
+    {"Touches Per Hour": "mean", "Rejection Rate (%)": "mean"}
+).reset_index()
+
+# --- HEADER & HIGH-LEVEL METRICS ---
+st.markdown("## Specialist Pulse Dashboard")
+st.markdown("Multi-dimensional workflow tracking and efficiency matrix.")
 st.divider()
 
-# --- KPI METRIC CARDS ---
-# Calculating team averages for the high-level view
-avg_touches = round(df["Touches Per Hour"].mean(), 1)
-avg_accuracy = round(df["Accuracy Rate (%)"].mean(), 1)
+if not filtered_df.empty:
+    avg_touches = round(agg_df["Touches Per Hour"].mean(), 1)
+    avg_rejection = round(agg_df["Rejection Rate (%)"].mean(), 1)
 
-col1, col2, col3 = st.columns(3)
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric(label="Avg Touches / Hour (Selected Range)", value=f"{avg_touches}", delta=f"{round(avg_touches - 22, 1)} vs Merit Goal")
+    with col2:
+        st.metric(label="Avg Rejection Rate (Selected Range)", value=f"{avg_rejection}%", delta=f"{round(10 - avg_rejection, 1)}% vs 10% Goal", delta_color="inverse")
+    with col3:
+        st.metric(label="Total Submissions Analyzed", value=f"{len(filtered_df)}")
 
-with col1:
-    st.metric(label="Team Avg Touches / Hour", value=f"{avg_touches}", delta=f"{round(avg_touches - 22, 1)} vs Merit Goal")
-with col2:
-    st.metric(label="Team Avg Accuracy", value=f"{avg_accuracy}%", delta=f"{round(avg_accuracy - 90, 1)}% vs Goal")
-with col3:
-    st.metric(label="Active Specialists", value=len(specialists), delta="Full Capacity")
+    st.markdown("<br>", unsafe_allow_html=True)
 
-st.markdown("<br>", unsafe_allow_html=True) # Adds a little breathing room
+    # --- QUADRANT SCATTER PLOT ---
+    st.markdown("### Efficiency & Accuracy Matrix")
 
-# --- VISUALIZATIONS ---
-col_charts_1, col_charts_2 = st.columns(2)
-
-with col_charts_1:
-    st.markdown("Touches Per Hour")
-    
-    # Modern Bar Chart using Plotly
-    fig_speed = px.bar(
-        df, 
-        x="Specialist", 
-        y="Touches Per Hour",
-        text="Touches Per Hour",
-        template="plotly_dark", # Forces the sleek dark background
-        color_discrete_sequence=["#00E6A8"] # Neon mint green
-    )
-    
-    # Adding the Merit Goal Cutoff Line
-    fig_speed.add_hline(
-        y=22, 
-        line_dash="dash", 
-        line_color="#FF3366", # Vibrant pink for the goal line
-        annotation_text="Merit Goal (22/hr)", 
-        annotation_position="top right",
-        annotation_font_color="#FF3366"
-    )
-    
-    # Cleaning up the chart aesthetics
-    fig_speed.update_layout(
-        xaxis_title="", 
-        yaxis_title="",
-        showlegend=False,
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)"
-    )
-    fig_speed.update_traces(textposition='outside')
-    
-    st.plotly_chart(fig_speed, use_container_width=True)
-
-with col_charts_2:
-    st.markdown("Accuracy Rate")
-    
-    # Creating a color condition: Red if below 90%, Blue if above
-    df["Color"] = np.where(df["Accuracy Rate (%)"] >= 90.0, "#00E6A8", "#FF3366")
-    
-    # Horizontal Bar Chart for Accuracy
-    fig_acc = px.bar(
-        df.sort_values("Accuracy Rate (%)", ascending=True), 
-        x="Accuracy Rate (%)", 
-        y="Specialist",
-        orientation='h',
-        text="Accuracy Rate (%)",
+    # Creating the scatter plot
+    fig_matrix = px.scatter(
+        agg_df, 
+        x="Touches Per Hour", 
+        y="Rejection Rate (%)",
+        text="Specialist",
         template="plotly_dark",
-        color="Color",
-        color_discrete_map="identity" # Uses the exact hex codes from the column
+        color_discrete_sequence=["#00E6A8"],
+        size_max=60
     )
-    
-    # Adding the 90% Goal Line
-    fig_acc.add_vline(
-        x=90.0, 
-        line_dash="dash", 
-        line_color="#FFFFFF", 
-        annotation_text="90% Goal", 
-        annotation_position="top left"
-    )
-    
-    # Cleaning up aesthetics
-    fig_acc.update_layout(
-        xaxis_title="", 
-        yaxis_title="",
-        xaxis=dict(range=[80, 100]), # Zooming in so the differences are obvious
-        showlegend=False,
+
+    # Adding the Quadrant Lines (Merit Goal: 22 touches, Rejection Goal: 10%)
+    fig_matrix.add_vline(x=22, line_dash="dash", line_color="#FFFFFF", opacity=0.5)
+    fig_matrix.add_hline(y=10, line_dash="dash", line_color="#FFFFFF", opacity=0.5)
+
+    # Adding Quadrant Labels
+    fig_matrix.add_annotation(x=30, y=5, text="High Speed / High Quality", showarrow=False, font=dict(color="#00E6A8", size=14))
+    fig_matrix.add_annotation(x=30, y=16, text="High Speed / Low Quality", showarrow=False, font=dict(color="#FF3366", size=14))
+    fig_matrix.add_annotation(x=17, y=5, text="Low Speed / High Quality", showarrow=False, font=dict(color="#FFC107", size=14))
+    fig_matrix.add_annotation(x=17, y=16, text="Low Speed / Low Quality", showarrow=False, font=dict(color="#FF3366", size=14))
+
+    # Clean up the chart aesthetics
+    fig_matrix.update_traces(textposition='top center', marker=dict(size=12))
+    fig_matrix.update_layout(
+        xaxis_title="Touches Per Hour (Speed)", 
+        yaxis_title="Rejection Rate % (Quality)",
+        xaxis=dict(range=[14, 34]),
+        yaxis=dict(range=[0, 20]),
         plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)"
+        paper_bgcolor="rgba(0,0,0,0)",
+        height=600
     )
-    fig_acc.update_traces(textposition='inside')
-    
-    st.plotly_chart(fig_acc, use_container_width=True)
+
+    st.plotly_chart(fig_matrix, use_container_width=True)
+
+else:
+    st.warning("No data available for the selected dates and states. Please adjust your filters.")
