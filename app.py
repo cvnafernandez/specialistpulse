@@ -19,24 +19,22 @@ def generate_data():
     end_date = datetime.date.today()
     dates = pd.date_range(start_date, end_date)
     
-    # State baselines (Touches per hour based on handle time)
     state_speeds = {
-        "California": 6.0,  # ~10 mins per touch
-        "Arizona": 4.2,     # ~14 mins per touch
-        "Colorado": 3.75    # ~16 mins per touch
+        "California": 6.0,  
+        "Arizona": 4.2,     
+        "Colorado": 3.75    
     }
 
-    # Specialist profiles: speed_mod adjusts their speed relative to the state baseline
     specialist_profiles = {
-        "Avery S.": {"speed_mod": 1.5, "acc": 97},  # High/High
-        "Jordan T.": {"speed_mod": 0.8, "acc": 84}, # High/Low
-        "Casey L.": {"speed_mod": -1.0, "acc": 96}, # Low/High
-        "Taylor R.": {"speed_mod": -1.5, "acc": 81}, # Low/Low
-        "Morgan W.": {"speed_mod": 0.0, "acc": 91}, # Middle (Baseline)
-        "Riley B.": {"speed_mod": 2.0, "acc": 94},  # Very Fast / Good Acc
-        "Quinn M.": {"speed_mod": -1.2, "acc": 88}, # Slow / Just under Acc
-        "Reese K.": {"speed_mod": 0.5, "acc": 95},  # Fast / High Acc
-        "Drew P.": {"speed_mod": 0.2, "acc": 89}    # Avg / Just under Acc
+        "Avery S.": {"speed_mod": 1.5, "acc": 97},  
+        "Jordan T.": {"speed_mod": 0.8, "acc": 84}, 
+        "Casey L.": {"speed_mod": -1.0, "acc": 96}, 
+        "Taylor R.": {"speed_mod": -1.5, "acc": 81}, 
+        "Morgan W.": {"speed_mod": 0.0, "acc": 91}, 
+        "Riley B.": {"speed_mod": 2.0, "acc": 94},  
+        "Quinn M.": {"speed_mod": -1.2, "acc": 88}, 
+        "Reese K.": {"speed_mod": 0.5, "acc": 95},  
+        "Drew P.": {"speed_mod": 0.2, "acc": 89}    
     }
     
     states = list(state_speeds.keys())
@@ -46,12 +44,10 @@ def generate_data():
         for s, profile in specialist_profiles.items():
             state = np.random.choice(states)
             
-            # Calculate touches: State baseline + Specialist modifier + slight random variance
             base_speed = state_speeds[state] + profile["speed_mod"]
             touches = np.random.normal(base_speed, 0.8)
-            touches = max(1, int(round(touches))) # Keep it realistic (min 1 touch/hr)
+            touches = max(1, int(round(touches))) 
             
-            # Calculate accuracy
             accuracy = np.clip(np.random.normal(profile["acc"], 2.5), 0, 100) 
             
             records.append([d, s, state, touches, accuracy])
@@ -80,6 +76,18 @@ else:
     filtered_df = df
 
 agg_df = filtered_df.groupby("Specialist").agg({"Touches Per Hour": "mean", "Accuracy Rate (%)": "mean"}).reset_index()
+
+# --- QUADRANT COLOR LOGIC ---
+def get_quadrant_color(row):
+    if row["Touches Per Hour"] >= MERIT_GOAL and row["Accuracy Rate (%)"] >= ACCURACY_GOAL:
+        return "#00E6A8" # Green (High Speed, High Quality)
+    elif row["Touches Per Hour"] < MERIT_GOAL and row["Accuracy Rate (%)"] < ACCURACY_GOAL:
+        return "#FF3366" # Red (Low Speed, Low Quality)
+    else:
+        return "#FFC107" # Orange (Mixed quadrants: Top-Left or Bottom-Right)
+
+if not filtered_df.empty:
+    agg_df["Quadrant Color"] = agg_df.apply(get_quadrant_color, axis=1)
 
 # --- HEADER & HIGH-LEVEL METRICS ---
 st.markdown("## ⚡ Specialist Pulse Dashboard")
@@ -117,11 +125,12 @@ if not filtered_df.empty:
 
     with col_charts_2:
         st.markdown("### 🎯 Quality: Accuracy Rate")
-        agg_df["Color"] = np.where(agg_df["Accuracy Rate (%)"] >= ACCURACY_GOAL, "#00E6A8", "#FF3366")
+        # Color coding for the bar chart
+        agg_df["Bar Color"] = np.where(agg_df["Accuracy Rate (%)"] >= ACCURACY_GOAL, "#00E6A8", "#FF3366")
         fig_acc = px.bar(
             agg_df.sort_values("Accuracy Rate (%)", ascending=True), 
             x="Accuracy Rate (%)", y="Specialist", orientation='h', text=agg_df.sort_values("Accuracy Rate (%)", ascending=True)["Accuracy Rate (%)"].round(1),
-            template="plotly_dark", color="Color", color_discrete_map="identity"
+            template="plotly_dark", color="Bar Color", color_discrete_map="identity"
         )
         fig_acc.add_vline(x=ACCURACY_GOAL, line_dash="dash", line_color="#FFFFFF", annotation_text="90% Goal", annotation_position="top left")
         fig_acc.update_layout(xaxis_title="", yaxis_title="", xaxis=dict(range=[75, 100]), showlegend=False, plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
@@ -133,26 +142,24 @@ if not filtered_df.empty:
     # --- ROW 2: QUADRANT SCATTER PLOT ---
     st.markdown("### 🧭 Efficiency & Accuracy Matrix")
 
+    # The scatter plot now pulls the "Quadrant Color" column we generated
     fig_matrix = px.scatter(
         agg_df, x="Touches Per Hour", y="Accuracy Rate (%)", text="Specialist",
-        template="plotly_dark", color_discrete_sequence=["#00E6A8"], size_max=60
+        template="plotly_dark", color="Quadrant Color", color_discrete_map="identity", size_max=60
     )
 
     # Quadrant Lines
     fig_matrix.add_vline(x=MERIT_GOAL, line_dash="dash", line_color="#FFFFFF", opacity=0.5)
     fig_matrix.add_hline(y=ACCURACY_GOAL, line_dash="dash", line_color="#FFFFFF", opacity=0.5)
 
-    # Quadrant Labels adjusted for the new 1-9 X-axis scale
-    fig_matrix.add_annotation(x=7.5, y=98, text="High Speed / High Quality", showarrow=False, font=dict(color="#00E6A8", size=14))
-    fig_matrix.add_annotation(x=7.5, y=80, text="High Speed / Low Quality", showarrow=False, font=dict(color="#FF3366", size=14))
-    fig_matrix.add_annotation(x=2.5, y=98, text="Low Speed / High Quality", showarrow=False, font=dict(color="#FFC107", size=14))
-    fig_matrix.add_annotation(x=2.5, y=80, text="Low Speed / Low Quality", showarrow=False, font=dict(color="#FF3366", size=14))
+    # (Removed text annotations per your request)
 
     fig_matrix.update_traces(textposition='top center', marker=dict(size=14))
     fig_matrix.update_layout(
         xaxis_title="Touches Per Hour (Speed)", yaxis_title="Accuracy Rate % (Quality)",
         xaxis=dict(range=[1, 9]), yaxis=dict(range=[75, 100]),
-        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", height=600
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", height=600,
+        showlegend=False
     )
 
     st.plotly_chart(fig_matrix, use_container_width=True)
