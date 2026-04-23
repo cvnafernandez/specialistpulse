@@ -55,7 +55,7 @@ st.markdown("<br>", unsafe_allow_html=True) # Adds a little breathing room
 col_charts_1, col_charts_2 = st.columns(2)
 
 with col_charts_1:
-    st.markdown("### 🚀 Speed: Touches Per Hour")
+    st.markdown("Touches Per Hour")
     
     # Modern Bar Chart using Plotly
     fig_speed = px.bar(
@@ -90,7 +90,7 @@ with col_charts_1:
     st.plotly_chart(fig_speed, use_container_width=True)
 
 with col_charts_2:
-    st.markdown("### 🎯 Quality: Accuracy Rate")
+    st.markdown("Accuracy Rate")
     
     # Creating a color condition: Red if below 90%, Blue if above
     df["Color"] = np.where(df["Accuracy Rate (%)"] >= 90.0, "#00E6A8", "#FF3366")
